@@ -1,0 +1,12 @@
+{
+  "name": "atom-smasher",
+  "version": "2.0.0",
+  "description": "Atom Smasher - Match-3 Game (Milestone 2)",
+  "main": "js/main.js",
+  "scripts": {
+    "test": "node tests/board.test.js",
+    "test:watch": "node --watch tests/board.test.js"
+  },
+  "keywords": ["game", "match3", "phaser"],
+  "license": "MIT"
+}

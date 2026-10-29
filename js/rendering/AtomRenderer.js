@@ -313,27 +313,44 @@
         if (sprite.specialOverlay) sprite.specialOverlay.setTint(tintColor);
         if (sprite.obstacleOverlay) sprite.obstacleOverlay.setTint(tintColor);
 
-        const tween = this.scene.tweens.add({
+        // Match pop + highlight ring
+        const highlight = this.scene.add.graphics();
+        highlight.lineStyle(3, tintColor, 0.9);
+        highlight.strokeCircle(0, 0, this.cellSize * 0.55);
+        highlight.setPosition(sprite.x, sprite.y);
+        highlight.setDepth(sprite.depth + 5);
+
+        this.scene.tweens.add({
           targets: sprite,
-          scaleX: 0.1,
-          scaleY: 0.1,
-          alpha: 0,
-          duration: 170,
-          ease: "Quad.easeIn",
+          scaleX: 1.15,
+          scaleY: 1.15,
+          duration: 60,
+          ease: "Back.easeOut",
           onComplete: () => {
-            // Null sprite matrix entry AFTER tween completes
-            this.sprites[cell.r][cell.c] = null;
-            if (sprite.specialOverlay) sprite.specialOverlay.destroy();
-            if (sprite.obstacleOverlay) sprite.obstacleOverlay.destroy();
-            sprite.destroy();
-            completed++;
-            if (completed === total) {
-              guard.remove(false);
-              if (onComplete) onComplete();
-            }
+            this.scene.tweens.add({
+              targets: [sprite, highlight],
+              scaleX: 0.1,
+              scaleY: 0.1,
+              alpha: 0,
+              duration: 110,
+              ease: "Quad.easeIn",
+              onComplete: () => {
+                highlight.destroy();
+                // Null sprite matrix entry AFTER tween completes
+                this.sprites[cell.r][cell.c] = null;
+                if (sprite.specialOverlay) sprite.specialOverlay.destroy();
+                if (sprite.obstacleOverlay) sprite.obstacleOverlay.destroy();
+                sprite.destroy();
+                completed++;
+                if (completed === total) {
+                  guard.remove(false);
+                  if (onComplete) onComplete();
+                }
+              }
+            });
           }
         });
-        removalTweens.push(tween);
+        removalTweens.push(highlight);
       }
     }
 
@@ -616,20 +633,37 @@
 
     // ---- Obstacle Damage Animation ----
     animateObstacleDamage(damagedCells, onComplete) {
+      const targets = [];
       for (const cell of damagedCells) {
-        const sprite = this.sprites[cell.r][cell.c];
+        const sprite = this.sprites[cell.r]?.[cell.c];
         if (sprite && sprite.obstacleOverlay) {
+          targets.push({ sprite, cell });
           // Crack effect
           this.scene.tweens.add({
             targets: sprite.obstacleOverlay,
             alpha: 0.3,
             duration: 100,
             yoyo: true,
-            repeat: 2
+            repeat: 2,
+            onComplete: () => {
+              // Restore alpha after crack animation
+              if (sprite.obstacleOverlay) {
+                sprite.obstacleOverlay.setAlpha(1);
+              }
+            }
           });
         }
       }
-      if (onComplete) this.scene.time.delayedCall(300, onComplete);
+
+      if (targets.length === 0) {
+        if (onComplete) onComplete();
+        return;
+      }
+
+      // Wait for all crack animations to complete (3 cycles * 100ms = 300ms)
+      this.scene.time.delayedCall(350, () => {
+        if (onComplete) onComplete();
+      });
     }
 
     // ---- Utility Effects ----

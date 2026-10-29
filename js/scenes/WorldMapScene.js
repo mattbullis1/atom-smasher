@@ -27,8 +27,16 @@
         this.createLegend();
         this.createSettingsButton();
 
-        // Handle resize
-        this.scale.on("resize", this.onResize, this);
+        // Handle resize — register only ONCE. create() is re-run by onResize(),
+        // so re-registering here would multiply listeners and blow the stack.
+        if (!this._resizeListenerAdded) {
+          this._resizeListenerAdded = true;
+          this.scale.on("resize", this.onResize, this);
+          this.events.once("shutdown", () => {
+            this.scale.off("resize", this.onResize, this);
+            this._resizeListenerAdded = false;
+          });
+        }
       } catch (e) {
         console.error("WorldMapScene crash:", e);
         document.body.innerHTML = '<div style="color:#ff4444;font-family:monospace;font-size:18px;padding:40px;background:#050912">MAP ERROR: ' + (e.message || e) + '</div>';

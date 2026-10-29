@@ -107,8 +107,17 @@
       return flash;
     }
 
+    // Normalize a color given as number (0xRRGGBB) or hex string ("#RRGGBB")
+    toColorInt(c) {
+      if (typeof c === "number") return c;
+      if (typeof c === "string" && c.length > 0) {
+        return Phaser.Display.Color.HexStringToColor(c).color;
+      }
+      return 0xffffff;
+    }
+
     colorFlash(hexColor, duration = 120, alpha = 0.35) {
-      return this.flash(Phaser.Display.Color.HexStringToColor(hexColor).color, duration, alpha);
+      return this.flash(this.toColorInt(hexColor), duration, alpha);
     }
 
     comboFlash(level) {
@@ -165,7 +174,7 @@
         this.scene.scale.height / 2,
         this.scene.scale.width,
         this.scene.scale.height,
-        Phaser.Display.Color.HexStringToColor(hexColor).color,
+        this.toColorInt(hexColor),
         intensity
       );
       this.colorGrade.setDepth(300);

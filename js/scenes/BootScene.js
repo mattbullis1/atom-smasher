@@ -56,6 +56,7 @@
         this.initializeAudio();
         this.enableAudioOnInteraction();
         this.checkExternalAssets();
+
         const levelParam = parseInt(new URLSearchParams(window.location.search).get("level"), 10);
         if (levelParam >= 1 && levelParam <= 50) {
           this.scene.start("GameScene", { levelId: levelParam });

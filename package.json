@@ -1,12 +1,12 @@
 {
   "name": "atom-smasher",
-  "version": "2.0.0",
-  "description": "Atom Smasher - Match-3 Game (Milestone 2)",
+  "version": "1.0.0",
+  "description": "Atom Smasher — neon match-3 puzzle game (Phaser 3, procedural + sprite art, 50 levels)",
   "main": "js/main.js",
   "scripts": {
     "test": "node tests/board.test.js",
     "test:watch": "node --watch tests/board.test.js"
   },
-  "keywords": ["game", "match3", "phaser"],
+  "keywords": ["game", "match3", "phaser", "puzzle", "neon"],
   "license": "MIT"
 }

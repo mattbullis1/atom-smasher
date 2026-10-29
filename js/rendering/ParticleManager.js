@@ -1,5 +1,5 @@
 /* =========================================================
-   Atom Smasher — Particle Manager
+   Atom Smasher â€” Particle Manager
    Handles all particle effects: match explosions, special activations,
    combo bursts, obstacle breaks, cascade trails.
    ========================================================= */
@@ -16,6 +16,17 @@
       this.AtomTypes = AtomTypes;
       this.activeEmitters = [];
       this.pools = new Map(); // Reusable emitters
+    }
+
+    // Normalize a color given as either a number (0xRRGGBB) or a hex string
+    // ("#RRGGBB"). Phaser's HexStringToColor() only accepts strings, so passing
+    // a number throws "t.replace is not a function".
+    toColorInt(c) {
+      if (typeof c === "number") return c;
+      if (typeof c === "string" && c.length > 0) {
+        return Phaser.Display.Color.HexStringToColor(c).color;
+      }
+      return 0xffffff;
     }
 
     // ---- Match Explosion (color-matched) ----
@@ -79,7 +90,7 @@
       const isHorizontal = direction === "striped_h";
       const length = isHorizontal ? this.scene.scale.width : this.scene.scale.height;
       const beam = this.scene.add.graphics();
-      beam.fillStyle(Phaser.Display.Color.HexStringToColor(color).color, 0.4);
+      beam.fillStyle(this.toColorInt(color), 0.4);
       if (isHorizontal) {
         beam.fillRect(0, y - 30, length, 60);
       } else {
@@ -148,6 +159,9 @@
     }
 
     activateMega(x, y, color) {
+      // NUCLEAR BLAST â€” max intensity for MEGA atoms
+      this.nuclearExplosion(x, y, 5);
+
       // Screen-wide effect
       // Flash
       const flash = this.scene.add.rectangle(
@@ -155,7 +169,7 @@
         this.scene.scale.height / 2,
         this.scene.scale.width,
         this.scene.scale.height,
-        Phaser.Display.Color.HexStringToColor(color).color,
+        this.toColorInt(color),
         0.25
       );
       flash.setDepth(200);
@@ -231,8 +245,164 @@
           scale: { start: 0.6, end: 0 },
           lifespan: 600
         });
+
+        // Shock wave ripple from combo center
+        this.createShockWave(x, y, comboLevel);
+
+        // NUCLEAR BLAST on combos (intensity scales with combo level)
+        if (comboLevel >= 2) {
+          this.nuclearExplosion(x, y, comboLevel);
+        }
       } catch (e) {
         console.error("showComboText crash:", e);
+      }
+    }
+
+    // ---- NUCLEAR EXPLOSION (combos / big matches) ----
+    // Layered blast: white-hot core, fireball, mushroom column, multi-ring
+    // shockwave, embers, debris shards, and a full-screen flash.
+    // intensity 1..5 â€” bigger, brighter, wider at higher combos.
+    nuclearExplosion(x, y, intensity = 1) {
+      try {
+        const I = Phaser.Math.Clamp(intensity, 1, 5);
+        const w = this.scene.scale.width;
+        const h = this.scene.scale.height;
+
+        // 1. White-hot core flash
+        const core = this.scene.add.ellipse(x, y, 46, 46, 0xffffff, 1);
+        core.setDepth(185);
+        this.scene.tweens.add({
+          targets: core,
+          scaleX: 4 + I * 1.1,
+          scaleY: 4 + I * 1.1,
+          alpha: 0,
+          duration: 260,
+          ease: "Quad.easeOut",
+          onComplete: () => core.destroy()
+        });
+
+        // 2. Fireball (orange)
+        const fire = this.scene.add.ellipse(x, y, 56, 56, 0xffa500, 0.9);
+        fire.setDepth(184);
+        this.scene.tweens.add({
+          targets: fire,
+          scaleX: 5 + I * 1.2,
+          scaleY: 5 + I * 1.2,
+          alpha: 0,
+          duration: 420,
+          ease: "Quad.easeOut",
+          onComplete: () => fire.destroy()
+        });
+
+        // 3. Mushroom column rising
+        const col = this.scene.add.ellipse(x, y - 30, 70, 150, 0xff6b35, 0.5);
+        col.setDepth(183);
+        this.scene.tweens.add({
+          targets: col,
+          y: y - 130,
+          scaleX: 1.5,
+          scaleY: 2.4,
+          alpha: 0,
+          duration: 620,
+          ease: "Quad.easeOut",
+          onComplete: () => col.destroy()
+        });
+
+        // 4. Multi-ring shockwave â€” Arc + radius tween so the stroke width
+        // stays constant (scaling a Graphics object also scales its stroke).
+        const ringColors = [0xffffff, 0xffd60a, 0xff6b35, 0xff1a7b];
+        const rings = 2 + Math.floor(I / 2);
+        for (let i = 0; i < rings; i++) {
+          const maxR = Math.min(120 + I * 55 + i * 45, 380);
+          const ring = this.scene.add.circle(x, y, 12);
+          ring.setFillStyle();
+          ring.setStrokeStyle(Math.max(2, 5 - i), ringColors[Math.min(i, ringColors.length - 1)], 0.9);
+          ring.setDepth(176 + i);
+          this.scene.tweens.add({
+            targets: ring,
+            radius: maxR,
+            alpha: 0,
+            delay: i * 55,
+            duration: 460 + i * 80,
+            ease: "Quad.easeOut",
+            onComplete: () => ring.destroy()
+          });
+        }
+
+        // 5. Ember burst (additive)
+        this.createBurst(x, y, 0xff6b35, {
+          count: 30 + I * 12,
+          speed: { min: 150, max: 220 + I * 90 },
+          scale: { start: 0.8, end: 0 },
+          lifespan: 700,
+          gravityY: 120,
+          blendMode: Phaser.BlendModes.ADD
+        });
+
+        // 6. Debris shards
+        this.createShards(x, y, 0xffd60a, 6 + I * 2);
+
+        // 7. Full-screen blast flash
+        const flash = this.scene.add.rectangle(w / 2, h / 2, w, h, 0xffffff, 0.12 + I * 0.05);
+        flash.setDepth(190);
+        this.scene.tweens.add({
+          targets: flash,
+          alpha: 0,
+          duration: 300 + I * 40,
+          ease: "Quad.easeOut",
+          onComplete: () => flash.destroy()
+        });
+
+        // 8. Ground dust ring (slow, gray) — radius tween keeps the stroke width
+        // constant; scaling a Graphics would thicken the line into wedges.
+        const dust = this.scene.add.circle(x, y, 20);
+        dust.setFillStyle();
+        dust.setStrokeStyle(7, 0x8888aa, 0.3);
+        dust.setDepth(174);
+        this.scene.tweens.add({
+          targets: dust,
+          radius: 190 + I * 45,
+          alpha: 0,
+          duration: 800,
+          ease: "Quad.easeOut",
+          onComplete: () => dust.destroy()
+        });
+      } catch (e) {
+        console.error("nuclearExplosion crash:", e);
+      }
+    }
+
+    // ---- Shock Wave Effect ----
+    // Expanding ring ripple from combo center for visual impact
+    createShockWave(x, y, comboLevel) {
+      try {
+        const color = comboLevel >= 4 ? 0xff6b35 : (comboLevel >= 2 ? 0xffd60a : 0x00d4ff);
+        const ringCount = comboLevel >= 4 ? 3 : 2;
+
+        for (let i = 0; i < ringCount; i++) {
+          // Arc + radius tween: stroke width stays constant (scaling a Graphics
+          // would scale its line thickness into thick bands).
+          const ring = this.scene.add.circle(x, y, 10);
+          ring.setFillStyle();
+          ring.setStrokeStyle(3, color, 0.8);
+          ring.setDepth(150 + i);
+
+          const delay = i * 60;
+          const duration = 500;
+          const maxRadius = 120 + comboLevel * 40;
+
+          this.scene.tweens.add({
+            targets: ring,
+            radius: maxRadius,
+            alpha: 0,
+            delay,
+            duration,
+            ease: "Quad.easeOut",
+            onComplete: () => ring.destroy()
+          });
+        }
+      } catch (e) {
+        console.error("createShockWave crash:", e);
       }
     }
 
@@ -283,7 +453,7 @@
         angle: { min: -30, max: 30 },
         scale: { start: 0.3, end: 0 },
         alpha: { start: 0.5, end: 0 },
-        tint: Phaser.Display.Color.HexStringToColor(color).color,
+        tint: this.toColorInt(color),
         quantity: 1,
         frequency: 30,
         blendMode: Phaser.BlendModes.ADD
@@ -294,9 +464,10 @@
 
     // ---- Low-level Particle Primitives ----
     createBurst(x, y, colorHex, options) {
-      const color = Phaser.Display.Color.HexStringToColor(colorHex).color;
+      const color = this.toColorInt(colorHex);
+      // NOTE: do NOT also set x/y in the config — Phaser adds them as an offset
+      // to the emitter position passed positionally, doubling the coordinates.
       const emitter = this.scene.add.particles(x, y, "particle", {
-        x: x, y: y,
         lifespan: options.lifespan || 400,
         speed: options.speed || { min: 50, max: 200 },
         angle: { min: 0, max: 360 },
@@ -317,7 +488,7 @@
     }
 
     createRing(x, y, colorHex, options) {
-      const color = Phaser.Display.Color.HexStringToColor(colorHex).color;
+      const color = this.toColorInt(colorHex);
       const radius = options.radius || 80;
       const duration = options.duration || 300;
       const thickness = options.thickness || 3;
@@ -338,7 +509,7 @@
     }
 
     createImplosion(x, y, colorHex, intensity = 1) {
-      const color = Phaser.Display.Color.HexStringToColor(colorHex).color;
+      const color = this.toColorInt(colorHex);
       const particles = intensity * 20;
 
       for (let i = 0; i < particles; i++) {
@@ -363,7 +534,7 @@
     }
 
     createSparkles(x, y, colorHex, count = 8) {
-      const color = Phaser.Display.Color.HexStringToColor(colorHex).color;
+      const color = this.toColorInt(colorHex);
       for (let i = 0; i < count; i++) {
         const angle = (i / count) * Math.PI * 2;
         const dist = 40 + Math.random() * 30;
@@ -385,7 +556,7 @@
     }
 
     createSparkle(x, y, colorHex) {
-      const color = Phaser.Display.Color.HexStringToColor(colorHex).color;
+      const color = this.toColorInt(colorHex);
       const p = this.scene.add.particles(x, y, "particle", {
         lifespan: 400,
         speed: { min: 20, max: 60 },
@@ -401,7 +572,7 @@
     }
 
     createShards(x, y, colorHex, count) {
-      const color = Phaser.Display.Color.HexStringToColor(colorHex).color;
+      const color = this.toColorInt(colorHex);
       for (let i = 0; i < count; i++) {
         const angle = (i / count) * Math.PI * 2 + Math.random() * 0.5;
         const speed = 100 + Math.random() * 150;

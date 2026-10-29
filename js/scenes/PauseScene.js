@@ -50,7 +50,7 @@
       }).setOrigin(0.5).setInteractive({ useHandCursor: true })
         .on("pointerdown", () => {
           this.scene.stop("GameScene");
-          this.scene.start("LevelSelectScene");
+          this.scene.start("WorldMapScene");
           this.scene.stop();
         })
         .on("pointerover", () => btnMenu.setColor("#00d4ff"))

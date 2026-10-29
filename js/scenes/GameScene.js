@@ -202,6 +202,64 @@
       this.add.text(this.scale.width / 2, 40, `CHAMBER ${this.levelId}: ${this.level.name}`, {
         fontFamily: "Consolas, monospace", fontSize: "24px", color: "#00d4ff", fontStyle: "bold"
       }).setOrigin(0.5);
+
+      // Random background sparkles
+      this.bgSparkles = [];
+      for (let i = 0; i < 25; i++) {
+        this.createSparkle();
+      }
+    }
+
+    createSparkle() {
+      const x = Phaser.Math.Between(0, this.scale.width);
+      const y = Phaser.Math.Between(0, this.scale.height);
+      const radius = Phaser.Math.FloatBetween(1, 3);
+      const sparkle = this.add.ellipse(x, y, radius * 2, radius * 2, 0xffffff, Phaser.Math.FloatBetween(0.2, 0.8));
+      sparkle.setDepth(1);
+      const twinkle = this.tweens.add({
+        targets: sparkle,
+        alpha: { from: 0.1, to: 1 },
+        duration: Phaser.Math.Between(800, 2500),
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut"
+      });
+      this.bgSparkles.push({ g: sparkle, twinkle });
+    }
+
+    updateSparkles() {
+      if (!this.bgSparkles) return;
+      // Occasionally spawn a new random sparkle
+      if (Math.random() < 0.02) {
+        this.createSparkle();
+      }
+      // Cap sparkle count
+      if (this.bgSparkles.length > 40) {
+        const old = this.bgSparkles.shift();
+        if (old && old.twinkle) old.twinkle.stop();
+        if (old && old.g) old.g.destroy();
+      }
+    }
+
+    // ---- Score Float-Up ----
+    showScoreFloat(x, y, points) {
+      const txt = this.add.text(x, y, "+" + points, {
+        fontFamily: "Consolas, monospace",
+        fontSize: "24px",
+        fontStyle: "bold",
+        color: "#ffd60a",
+        stroke: "#050912",
+        strokeThickness: 2
+      }).setOrigin(0.5).setDepth(200);
+
+      this.tweens.add({
+        targets: txt,
+        y: y - 60,
+        alpha: 0,
+        duration: 600,
+        ease: "Power2",
+        onComplete: () => txt.destroy()
+      });
     }
 
     updatePlasmaClouds() {
@@ -239,10 +297,18 @@
         ...style, color: "#00ff88"
       }).setOrigin(1, 0.5);
 
-      // Diagnostic step display (shows where animation chain is)
-      this.txtStep = this.add.text(20, 150, "STEP: idle", {
-        fontFamily: "Consolas, monospace", fontSize: "16px", color: "#7fdbff"
-      }).setOrigin(0, 0.5).setAlpha(0.7);
+      // Combo counter (shown during cascades, under the board)
+      this.txtCombo = this.add.text(this.scale.width / 2, 1050, "COMBO x1!", {
+        fontFamily: "Consolas, monospace",
+        fontSize: "48px",
+        fontStyle: "bold",
+        color: "#ffd60a",
+        stroke: "#050912",
+        strokeThickness: 4
+      }).setOrigin(0.5).setAlpha(0);
+
+      // Score float-up container
+      this.floatUps = [];
 
       // Goals display
       this.createGoalsHUD();
@@ -442,7 +508,16 @@
           this.EffectManager.shakeMatch(true);
         }
 
-        // Create special atoms from matches
+        // Board-reactive background flash (first match)
+        this.flashMatchBackground(this.getDominantMatchColor(matched), matched.size);
+
+        // NUCLEAR BLAST for big first matches (4+ atoms = wrapped/mega territory)
+        if (matched.size >= 4 && this.ParticleManager) {
+          const pos = this.getMatchCentroid(matched);
+          const intensity = matched.size >= 6 ? 4 : (matched.size >= 5 ? 3 : 2);
+          this.ParticleManager.nuclearExplosion(pos.x, pos.y, intensity);
+          if (this.EffectManager) this.EffectManager.shake(6 + intensity * 3, 320);
+        }
         const specials = this.board.createSpecialAtoms(matched, [swapA, swapB]);
         this.specialsCreated = (this.specialsCreated || 0) + specials.length;
 
@@ -540,6 +615,7 @@
 
             if (matched.size === 0) {
               guard.remove(false);
+              this.txtCombo.setAlpha(0);
               this.checkSpecialActivations(() => {
                 try {
                   this.afterSettle(done);
@@ -556,6 +632,9 @@
             this.waveIndex++;
             this.comboLevel = Math.min(5, this.comboLevel + 1);
 
+            // Board-reactive background flash for cascade wave
+            this.flashMatchBackground(this.getDominantMatchColor(matched), matched.size);
+
             // Combo visual effects
             if (this.EffectManager && this.comboLevel >= 2) {
               this.EffectManager.comboFlash(this.comboLevel);
@@ -565,6 +644,17 @@
               } else if (this.comboLevel === 3) {
                 this.EffectManager.slowMo(0.4, 300);
               }
+              // Show big combo counter under board
+              this.txtCombo.setText("COMBO x" + this.comboLevel + "!");
+              this.txtCombo.setAlpha(1);
+              this.txtCombo.setScale(1.2);
+              this.tweens.add({
+                targets: this.txtCombo,
+                scaleX: 1,
+                scaleY: 1,
+                duration: 200,
+                ease: "Back.easeOut"
+              });
             }
 
             const removed = this.board.removeMatched(matched);
@@ -574,6 +664,11 @@
             for (const rem of removed) {
               waveScore += 10 * (rem.type + 1);
               if (rem.special) waveScore += rem.special & 0x100 ? 500 : (rem.special & 0x40 ? 100 : 50);
+              // Score float-up under the board (bottom area), floating up
+              const fx = this.originX + rem.c * this.cellSize + this.cellSize / 2;
+              const fy = this.originY + 9 * this.cellSize; // Below board (board ends at row 8)
+              const points = 10 * (rem.type + 1);
+              this.showScoreFloat(fx, fy, points);
             }
             waveScore *= this.waveIndex;
             this.board.collected.score += waveScore;
@@ -897,7 +992,7 @@
       }).setOrigin(0.5).setInteractive({ useHandCursor: true })
         .on("pointerdown", () => {
           overlay.destroy(true);
-          this.scene.start("LevelSelectScene");
+          this.scene.start("WorldMapScene");
         });
 
       const btnNo = this.add.text(this.scale.width/2 + 80, this.scale.height/2 + 40, "NO", {
@@ -928,11 +1023,85 @@
     }
 
     update() {
-      // Update background particles if any
       this.updatePlasmaClouds();
+      this.updateSparkles();
+    }
+
+    flashMatchBackground(color, matchCount) {
+      try {
+        // Clear any previous flash overlays so they don't stack
+        if (this.flashOverlay) {
+          this.flashOverlay.destroy();
+          this.flashOverlay = null;
+        }
+        if (this.flashRing) {
+          this.flashRing.destroy();
+          this.flashRing = null;
+        }
+
+        const flash = this.add.rectangle(
+          this.scale.width / 2,
+          this.scale.height / 2,
+          this.scale.width,
+          this.scale.height,
+          color,
+          matchCount >= 5 ? 0.35 : matchCount >= 3 ? 0.25 : 0.12
+        );
+        flash.setDepth(200);
+
+        const maxRadius = matchCount >= 5 ? 400 : matchCount >= 3 ? 250 : 150;
+
+        const ring = this.add.graphics();
+        ring.lineStyle(matchCount >= 5 ? 6 : matchCount >= 3 ? 4 : 2, color, matchCount >= 5 ? 0.8 : matchCount >= 3 ? 0.6 : 0.4);
+        ring.strokeCircle(this.scale.width / 2, this.scale.height / 2, 0);
+        ring.setDepth(201);
+
+        this.flashOverlay = flash;
+        this.flashRing = ring;
+
+        this.scene.tweens.add({
+          targets: flash,
+          alpha: 0,
+          duration: matchCount >= 5 ? 600 : matchCount >= 3 ? 450 : 300,
+          ease: "Quad.easeOut",
+          onComplete: () => {
+            flash.destroy();
+            this.flashOverlay = null;
+          }
+        });
+
+        this.scene.tweens.add({
+          targets: ring,
+          alpha: 0,
+          scaleX: maxRadius / 10,
+          scaleY: maxRadius / 10,
+          duration: matchCount >= 5 ? 800 : matchCount >= 3 ? 600 : 400,
+          ease: "Quad.easeOut",
+          onComplete: () => {
+            ring.destroy();
+            this.flashRing = null;
+          }
+        });
+      } catch (e) {
+        console.error("flashMatchBackground crash:", e);
+      }
     }
 
     // Helper: get dominant match color for flash effect
+    // Average board-pixel position of a matched set (for blast origin)
+    getMatchCentroid(matched) {
+      let sx = 0, sy = 0, n = 0;
+      for (const idx of matched) {
+        const r = Math.floor(idx / this.board.cols);
+        const c = idx % this.board.cols;
+        sx += this.originX + c * this.cellSize + this.cellSize / 2;
+        sy += this.originY + r * this.cellSize + this.cellSize / 2;
+        n++;
+      }
+      if (n === 0) return { x: this.scale.width / 2, y: this.scale.height / 2 };
+      return { x: sx / n, y: sy / n };
+    }
+
     getDominantMatchColor(matched) {
       const colorCounts = {};
       for (const idx of matched) {
@@ -951,7 +1120,9 @@
       for (const [color, count] of Object.entries(colorCounts)) {
         if (count > maxCount) { maxCount = count; maxColor = color; }
       }
-      return maxColor;
+      // Return a numeric color (0xRRGGBB) — callers use it for rectangle fills
+      // and Graphics lineStyle, which require numbers.
+      return Phaser.Display.Color.HexStringToColor(maxColor).color;
     }
   }
 

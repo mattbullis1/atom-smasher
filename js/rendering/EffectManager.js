@@ -69,8 +69,10 @@
       this.scene.tweens.timeScale = this.timeScale;
 
       if (duration > 0) {
+        // Reset with duration 0 — passing a duration here re-scheduled this
+        // reset forever (a permanent timer loop).
         this.scene.time.delayedCall(duration, () => {
-          this.setTimeScale(1, 200, ease);
+          this.setTimeScale(1, 0, ease);
         });
       }
       return prev;

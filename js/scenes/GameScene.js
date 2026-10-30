@@ -21,6 +21,10 @@
 
     create() {
       try {
+      // Reset the teardown flag and watch for shutdown so pending animation
+      // callbacks can bail out instead of touching a destroyed scene.
+      this._shutdown = false;
+      this.events.once("shutdown", () => { this._shutdown = true; });
       // Get core systems from registry
       this.AtomTypes = this.game.registry.get("AtomTypes");
       this.ObstacleTypes = this.game.registry.get("ObstacleTypes");
@@ -491,6 +495,7 @@
 
     processSwapResult(swapA, swapB, done) {
       try {
+        if (!this.isLive()) { if (done) done(); return; }
         this.setStep("match");
         // Find matches after swap
         const matched = this.board.findMatches();
@@ -533,6 +538,7 @@
         // Animate removal with particles
         this.renderer.animateRemoval(removed, () => {
           try {
+            if (!this.isLive()) { if (done) done(); return; }
             // Particle effects for each removed atom
             for (const cell of removed) {
               if (this.ParticleManager) {
@@ -543,10 +549,11 @@
             // Animate obstacle damage
             this.renderer.animateObstacleDamage(damaged, () => {
               try {
+                if (!this.isLive()) { if (done) done(); return; }
                 // Particle effects for obstacles
                 for (const cell of damaged) {
                   if (this.ParticleManager) {
-                    this.ParticleManager.breakObstacle(cell.r, cell.c, cell.type, { originX: this.originX, originY: this.originY }, this.cellSize);
+                    this.ParticleManager.breakObstacle(cell.r, cell.c, cell.prevType, { originX: this.originX, originY: this.originY }, this.cellSize);
                   }
                 }
 
@@ -554,6 +561,7 @@
                 const gravity = this.board.applyGravity();
                 this.renderer.animateFalls(gravity.moves, gravity.refills, () => {
                   try {
+                    if (!this.isLive()) { if (done) done(); return; }
                     // Cascade trails for falling atoms
                     for (const move of gravity.moves) {
                       if (this.ParticleManager) {
@@ -597,6 +605,7 @@
     // ---- Cascade Resolution ----
     resolveCascades(done) {
       try {
+        if (!this.isLive()) { if (done) done(); return; }
         // Safety: force-unlock after 10 s
         const guard = this.time.delayedCall(10000, () => {
           console.warn("Cascade guard fired — forcing busy=false");
@@ -611,6 +620,18 @@
         const processWave = () => {
           try {
             this.setStep("cascade " + (this.waveIndex + 1));
+
+            // Hard cap: a pathological board must never recurse forever.
+            if (this.waveIndex >= 60) {
+              guard.remove(false);
+              this.txtCombo.setAlpha(0);
+              this.checkSpecialActivations(() => {
+                try { this.afterSettle(done); }
+                catch (e) { this.showGameError("SETTLE ERROR: " + (e.message || e)); this.busy = false; if (done) done(); }
+              });
+              return;
+            }
+
             const matched = this.board.findMatches();
 
             if (matched.size === 0) {
@@ -659,6 +680,18 @@
 
             const removed = this.board.removeMatched(matched);
 
+            // Safety: if the board reports matches but removes nothing, the
+            // cascade would spin forever (and overflow the stack). Break out.
+            if (!removed || removed.length === 0) {
+              guard.remove(false);
+              this.txtCombo.setAlpha(0);
+              this.checkSpecialActivations(() => {
+                try { this.afterSettle(done); }
+                catch (e) { this.showGameError("SETTLE ERROR: " + (e.message || e)); this.busy = false; if (done) done(); }
+              });
+              return;
+            }
+
             // Score
             let waveScore = 0;
             for (const rem of removed) {
@@ -692,6 +725,7 @@
             // Animate with particles
             this.renderer.animateRemoval(removed, () => {
               try {
+                if (!this.isLive()) { if (done) done(); return; }
                 // Particle effects for each removed atom
                 for (const cell of removed) {
                   if (this.ParticleManager) {
@@ -701,10 +735,11 @@
 
                 this.renderer.animateObstacleDamage(damaged, () => {
                   try {
+                    if (!this.isLive()) { if (done) done(); return; }
                     // Particle effects for obstacles
                     for (const cell of damaged) {
                       if (this.ParticleManager) {
-                        this.ParticleManager.breakObstacle(cell.r, cell.c, cell.type, { originX: this.originX, originY: this.originY }, this.cellSize);
+                        this.ParticleManager.breakObstacle(cell.r, cell.c, cell.prevType, { originX: this.originX, originY: this.originY }, this.cellSize);
                       }
                     }
 
@@ -712,6 +747,7 @@
                     const gravity = this.board.applyGravity();
                     this.renderer.animateFalls(gravity.moves, gravity.refills, () => {
                       try {
+                        if (!this.isLive()) { if (done) done(); return; }
                         // Cascade trails for falling atoms
                         for (const move of gravity.moves) {
                           if (this.ParticleManager) {
@@ -721,8 +757,9 @@
                             }
                           }
                         }
-                        // Continue cascade
-                        processWave();
+                        // Continue cascade on the next tick — calling processWave()
+                        // synchronously here let deep cascades overflow the stack.
+                        this.time.delayedCall(0, processWave);
                       } catch (e) {
                         console.error("Cascade continue crash:", e);
                         this.showGameError("CASCADE ERROR: " + (e.message || e));
@@ -1027,39 +1064,59 @@
       this.updateSparkles();
     }
 
+    // Scene is torn down (restart / level change) once Phaser fires shutdown —
+    // pending tween callbacks can still run after that point.
+    isLive() {
+      return !this._shutdown;
+    }
+
     flashMatchBackground(color, matchCount) {
       try {
-        // Clear any previous flash overlays so they don't stack
+        if (!this.isLive()) return;
+        // Clear any previous flash overlays so they don't stack.
+        // Kill their tweens first — a tween still driving a destroyed Arc
+        // throws "Cannot set properties of null (setting 'radius')".
         if (this.flashOverlay) {
+          this.tweens.killTweensOf(this.flashOverlay);
           this.flashOverlay.destroy();
           this.flashOverlay = null;
         }
         if (this.flashRing) {
+          this.tweens.killTweensOf(this.flashRing);
           this.flashRing.destroy();
           this.flashRing = null;
         }
 
+        // Board-sized glow only — a full-screen tint made the whole page
+        // visibly change shade on every single move.
+        const bw = this.board.cols * this.cellSize;
+        const bh = (this.board.rows || 8) * this.cellSize;
+        const cx = this.originX + bw / 2;
+        const cy = this.originY + bh / 2;
+
         const flash = this.add.rectangle(
-          this.scale.width / 2,
-          this.scale.height / 2,
-          this.scale.width,
-          this.scale.height,
+          cx, cy, bw, bh,
           color,
-          matchCount >= 5 ? 0.35 : matchCount >= 3 ? 0.25 : 0.12
+          matchCount >= 5 ? 0.22 : matchCount >= 3 ? 0.16 : 0.10
         );
         flash.setDepth(200);
 
         const maxRadius = matchCount >= 5 ? 400 : matchCount >= 3 ? 250 : 150;
 
-        const ring = this.add.graphics();
-        ring.lineStyle(matchCount >= 5 ? 6 : matchCount >= 3 ? 4 : 2, color, matchCount >= 5 ? 0.8 : matchCount >= 3 ? 0.6 : 0.4);
-        ring.strokeCircle(this.scale.width / 2, this.scale.height / 2, 0);
+        // Arc + radius tween keeps the stroke width constant.
+        const ring = this.add.circle(cx, cy, 10);
+        ring.setFillStyle();
+        ring.setStrokeStyle(
+          matchCount >= 5 ? 6 : matchCount >= 3 ? 4 : 2,
+          color,
+          matchCount >= 5 ? 0.8 : matchCount >= 3 ? 0.6 : 0.4
+        );
         ring.setDepth(201);
 
         this.flashOverlay = flash;
         this.flashRing = ring;
 
-        this.scene.tweens.add({
+        this.tweens.add({
           targets: flash,
           alpha: 0,
           duration: matchCount >= 5 ? 600 : matchCount >= 3 ? 450 : 300,
@@ -1070,11 +1127,10 @@
           }
         });
 
-        this.scene.tweens.add({
+        this.tweens.add({
           targets: ring,
+          radius: maxRadius,
           alpha: 0,
-          scaleX: maxRadius / 10,
-          scaleY: maxRadius / 10,
           duration: matchCount >= 5 ? 800 : matchCount >= 3 ? 600 : 400,
           ease: "Quad.easeOut",
           onComplete: () => {

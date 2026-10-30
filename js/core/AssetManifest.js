@@ -13,7 +13,7 @@
     constructor(basePath = "assets/") {
       this.basePath = basePath;
       // Cache-busting version — increment when assets change so refreshes fetch fresh files
-      this.cacheBust = "?v=4";
+      this.cacheBust = "?v=5";
       // External assets load by default. Add ?assets=0 to force procedural fallback.
       const search = (typeof window !== "undefined" && window.location) ? window.location.search : "";
       this.useExternal = !/[?&]assets=0/.test(search);

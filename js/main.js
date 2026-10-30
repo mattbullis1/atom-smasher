@@ -110,9 +110,6 @@
     document.body.appendChild(div);
   }
 
-  // Initialize game
-  window.game = new Phaser.Game(config);
-
   // Prevent context menu on right-click
   document.addEventListener("contextmenu", function (e) {
     e.preventDefault();

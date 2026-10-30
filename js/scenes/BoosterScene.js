@@ -372,7 +372,7 @@
       track.clear();
       track.fillStyle(settings[key] ? 0x00d4ff : 0x3a3a5a, 1);
       track.fillRoundedRect(-30, -12, 60, 24, 12);
-      this.scene.tweens.add({
+      this.tweens.add({
         targets: knob,
         x: settings[key] ? 15 : -15,
         duration: 150,

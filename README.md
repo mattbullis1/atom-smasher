@@ -30,6 +30,8 @@ http://localhost:8080/atom-smasher/?assets=0
 - **Juice** — match pops + highlight rings, score float-ups, combo counter, background flash, plasma nebula clouds, twinkling sparkles, screen shake, slow-mo
 - **Audio** — Web Audio synthesized SFX (no audio files required); SFX pool + music layers with graceful fallback
 - **Progress** — localStorage save (stars, high scores, settings), star-gated world map, boosters bought with stars
+- **Hint button** — highlights a guaranteed-legal swap (never a stone or empty cell) with a short cooldown
+- **Animated reactor map** — nodes pop in along the route, energy pulses flow along the path, current chamber has a pulsing halo
 - **Persistence-safe** — optional external sprite art with automatic procedural fallback
 
 ## Controls

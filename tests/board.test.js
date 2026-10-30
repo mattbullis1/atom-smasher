@@ -584,6 +584,55 @@ section("26. Gravity refills holes below stone walls");
   ok(g.refills.some(f => f.row > 3), "refills spawned below the stone wall");
 }
 
+/* 27. Hint API returns real, playable swaps */
+section("27. Hint API (findAllValidSwaps / findHintSwap)");
+{
+  let allValid = true;
+  let sawHint = false;
+  for (let seed = 1; seed <= 15; seed++) {
+    const b = new BoardModel({ seed: seed * 7, types: 6 });
+    b.generateLevel({ atomTypes: 6, goals: { moves: 20 }, obstacles: [] });
+    const swaps = b.findAllValidSwaps();
+    if (swaps.length === 0) { allValid = false; break; }
+    for (const s of swaps) {
+      if (!b.swapCreatesMatch(s.a, s.b)) { allValid = false; break; }
+      if (Math.abs(s.a.r - s.b.r) + Math.abs(s.a.c - s.b.c) !== 1) { allValid = false; break; }
+      if (!b.isSwappable(s.a.r, s.a.c) || !b.isSwappable(s.b.r, s.b.c)) { allValid = false; break; }
+    }
+    const hint = b.findHintSwap();
+    if (!hint || !b.swapCreatesMatch(hint.a, hint.b)) { allValid = false; break; }
+    sawHint = true;
+  }
+  ok(allValid && sawHint, "every hinted swap is adjacent and creates a match");
+}
+
+/* 28. Hints never point at stone or empty cells */
+section("28. Hints skip stone/empty cells");
+{
+  const b = new BoardModel({ seed: 11, types: 6 });
+  b.rows = 8;
+  b.cols = 8;
+  b.grid = Array.from({ length: 8 }, (_, r) =>
+    Array.from({ length: 8 }, (_, c) => ((r * 3 + c * 2) % 6) + 1));
+  b.obstacles = Array.from({ length: 8 }, () =>
+    Array(8).fill(ObstacleTypes.OBSTACLE.NONE));
+  for (let c = 0; c < 8; c++) {
+    if (c !== 2 && c !== 5) b.obstacles[3][c] = ObstacleTypes.OBSTACLE.STONE;
+  }
+  b.grid[3][1] = null;
+  b.grid[3][4] = null;
+
+  const swaps = b.findAllValidSwaps();
+  let bad = 0;
+  for (const s of swaps) {
+    for (const p of [s.a, s.b]) {
+      if (b.obstacles[p.r][p.c] === ObstacleTypes.OBSTACLE.STONE) bad++;
+      if (b.grid[p.r][p.c] === null) bad++;
+    }
+  }
+  ok(bad === 0, "no hinted swap uses a stone or empty cell");
+}
+
 console.log("\n====================================");
 console.log("PASSED: " + passed + "   FAILED: " + failed);
 process.exitCode = failed > 0 ? 1 : 0;

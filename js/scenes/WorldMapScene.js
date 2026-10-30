@@ -121,7 +121,7 @@
     }
 
     createTitle() {
-      this.add.text(this.scale.width / 2, 40, "REACTOR NETWORK", {
+      const title = this.add.text(this.scale.width / 2, 40, "REACTOR NETWORK", {
         fontFamily: "Consolas, monospace",
         fontSize: "36px",
         color: "#00d4ff",
@@ -129,6 +129,16 @@
         stroke: "#00d4ff55",
         strokeThickness: 2
       }).setOrigin(0.5);
+
+      // Slow breathing glow so the header feels alive
+      this.tweens.add({
+        targets: title,
+        alpha: { from: 1, to: 0.72 },
+        duration: 1900,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut"
+      });
 
       this.add.text(this.scale.width / 2, 75, "SELECT CHAMBER", {
         fontFamily: "Consolas, monospace",
@@ -172,6 +182,22 @@
         );
         this.nodeContainers.push({ levelId, node, pos, unlocked });
       }
+
+      // Staggered entrance: nodes pop in along the path order, so the map
+      // "builds itself" every time the player returns to it.
+      for (let i = 0; i < this.nodeContainers.length; i++) {
+        const node = this.nodeContainers[i].node;
+        node.setScale(0.2);
+        node.setAlpha(0);
+        this.tweens.add({
+          targets: node,
+          scale: 1,
+          alpha: 1,
+          duration: 300,
+          delay: 120 + i * 18,
+          ease: "Back.easeOut"
+        });
+      }
     }
 
     calculateNodePositions(count) {
@@ -208,6 +234,14 @@
     createPathLines() {
       this.pathGraphics = this.add.graphics();
       this.pathGraphics.setDepth(5);
+      this.pathGraphics.setAlpha(0);
+      this.tweens.add({ targets: this.pathGraphics, alpha: 1, duration: 700, delay: 250 });
+
+      // Energy that flows along the unlocked route (redrawn each frame).
+      this.flowGraphics = this.add.graphics();
+      this.flowGraphics.setDepth(6);
+      this.flowSegments = [];
+      this.flowLocked = [];
 
       const positions = this.nodeContainers.map(n => n.pos);
       for (let i = 0; i < positions.length - 1; i++) {
@@ -232,11 +266,69 @@
         this.pathGraphics.lineTo(b.x, b.y);
         this.pathGraphics.strokePath();
 
+        // Only fully unlocked links carry the moving energy pulse
+        if (currentUnlocked && nextUnlocked) {
+          this.flowSegments.push({ a, b, phase: (i % 7) * 11 });
+        } else {
+          // Locked links still get a faint drift so the network never looks dead
+          this.flowLocked.push({ a, b, phase: (i % 7) * 11 });
+        }
+
         // Arrow indicator at end of active path
         if (currentUnlocked && nextUnlocked && i < positions.length - 2) {
           this.drawArrow(a.x, a.y, b.x, b.y, 0x00d4ff, 0.6);
         }
       }
+    }
+
+    // Marching dashes along the unlocked route — cheap: two batched strokes
+    // per frame regardless of how many segments are lit.
+    updatePathFlow() {
+      if (!this.flowGraphics || !this.flowSegments || this.flowSegments.length === 0) return;
+      const now = this.time.now;
+      if (now - (this._lastFlowDraw || 0) < 33) return;
+      this._lastFlowDraw = now;
+
+      const g = this.flowGraphics;
+      g.clear();
+
+      const DASH = 16, GAP = 30, SPEED = 0.055;
+      const t = now;
+
+      const trace = (segments, speed) => {
+        for (const seg of segments) {
+          const dx = seg.b.x - seg.a.x;
+          const dy = seg.b.y - seg.a.y;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          if (len < 14) continue;
+          const ux = dx / len, uy = dy / len;
+          const period = DASH + GAP;
+          const offset = ((t * speed + seg.phase) % period) - period;
+          for (let d = offset; d < len; d += period) {
+            const s = Math.max(0, d);
+            const e = Math.min(len, d + DASH);
+            if (e <= 0 || s >= e) continue;
+            g.moveTo(seg.a.x + ux * s, seg.a.y + uy * s);
+            g.lineTo(seg.a.x + ux * e, seg.a.y + uy * e);
+          }
+        }
+        g.strokePath();
+      };
+
+      // Locked links: slow, dim drift
+      if (this.flowLocked && this.flowLocked.length) {
+        g.lineStyle(2, 0x2f6f9a, 0.45);
+        g.beginPath();
+        trace(this.flowLocked, 0.018);
+      }
+
+      // Unlocked route: bright fast current
+      g.lineStyle(10, 0x00d4ff, 0.10);
+      g.beginPath();
+      trace(this.flowSegments, SPEED);
+      g.lineStyle(4, 0x7fe9ff, 0.85);
+      g.beginPath();
+      trace(this.flowSegments, SPEED);
     }
 
     drawArrow(x1, y1, x2, y2, color, alpha) {
@@ -279,6 +371,21 @@
         : "map_node_locked");
       bg.setDisplaySize(nodeSize, nodeSize);
       container.add(bg);
+
+      // Expanding halo around the current chamber
+      if (isCurrent) {
+        const halo = this.add.circle(0, 0, nodeSize * 0.62);
+        halo.setStrokeStyle(3, 0x00d4ff, 0.85);
+        container.addAt(halo, 0);
+        this.tweens.add({
+          targets: halo,
+          scale: { from: 0.9, to: 1.6 },
+          alpha: { from: 0.85, to: 0 },
+          duration: 1600,
+          repeat: -1,
+          ease: "Sine.easeOut"
+        });
+      }
 
       // Level number
       const numText = this.add.text(0, isFinal ? 8 : 0, levelId.toString(), {
@@ -517,6 +624,10 @@
     }
 
     onResize() {
+      // Kill tweens first: they can still be driving objects that are about
+      // to be destroyed (pulsing nodes, halos, path flow).
+      this.tweens.killAll();
+      this._lastFlowDraw = 0;
       this.children.removeAll(true);
       this.create();
     }
@@ -524,6 +635,7 @@
     update() {
       this.updateBackgroundParticles();
       this.updatePlasmaClouds();
+      this.updatePathFlow();
     }
   }
 

@@ -280,23 +280,59 @@
       return this.findAnyValidSwap() !== null;
     }
 
+    // A cell can only take part in a swap if it holds an atom and is not
+    // blocked by stone (immovable) or chain (locked).
+    isSwappable(r, c) {
+      if (this.grid[r][c] === null || this.grid[r][c] === undefined) return false;
+      const obs = this.getObstacle(r, c);
+      return obs !== OBSTACLE.STONE && obs !== OBSTACLE.CHAIN;
+    }
+
     findAnyValidSwap() {
       for (let r = 0; r < this.rows; r++) {
         for (let c = 0; c < this.cols; c++) {
           // Skip if cell has CHAIN obstacle (can't move chained atoms)
-          if (this.getObstacle(r, c) === OBSTACLE.CHAIN) continue;
+          if (!this.isSwappable(r, c)) continue;
           const a = { r, c };
-          if (c + 1 < this.cols && this.getObstacle(r, c+1) !== OBSTACLE.CHAIN) {
+          if (c + 1 < this.cols && this.isSwappable(r, c + 1)) {
             const b = { r, c: c + 1 };
             if (this.swapCreatesMatch(a, b)) return { a, b };
           }
-          if (r + 1 < this.rows && this.getObstacle(r+1, c) !== OBSTACLE.CHAIN) {
+          if (r + 1 < this.rows && this.isSwappable(r + 1, c)) {
             const b = { r: r + 1, c };
             if (this.swapCreatesMatch(a, b)) return { a, b };
           }
         }
       }
       return null;
+    }
+
+    // Every swap that would produce a match (used by the hint button).
+    findAllValidSwaps() {
+      const swaps = [];
+      for (let r = 0; r < this.rows; r++) {
+        for (let c = 0; c < this.cols; c++) {
+          if (!this.isSwappable(r, c)) continue;
+          const a = { r, c };
+          if (c + 1 < this.cols && this.isSwappable(r, c + 1)) {
+            const b = { r, c: c + 1 };
+            if (this.swapCreatesMatch(a, b)) swaps.push({ a, b });
+          }
+          if (r + 1 < this.rows && this.isSwappable(r + 1, c)) {
+            const b = { r: r + 1, c };
+            if (this.swapCreatesMatch(a, b)) swaps.push({ a, b });
+          }
+        }
+      }
+      return swaps;
+    }
+
+    // Random valid swap so repeated hints don't always point at the same
+    // top-left match. Returns null when the board is deadlocked.
+    findHintSwap() {
+      const swaps = this.findAllValidSwaps();
+      if (!swaps.length) return null;
+      return swaps[(this.rng() * swaps.length) | 0];
     }
 
     // ---- Match Removal ----

@@ -339,6 +339,167 @@
         .on("pointerdown", () => this.pauseGame())
         .on("pointerover", () => this.btnPause.setColor("#00d4ff"))
         .on("pointerout", () => this.btnPause.setColor("#7fdbff"));
+
+      // Hint button (below the board)
+      this.createHintButton();
+    }
+
+    createHintButton() {
+      const w = 168, h = 54;
+      const x = this.scale.width / 2;
+      const y = this.originY + this.board.rows * this.cellSize + 72;
+      const container = this.add.container(x, y).setDepth(150);
+
+      const bg = this.add.graphics();
+      bg.fillStyle(0x0d2439, 0.9);
+      bg.lineStyle(2, 0x00d4ff, 0.6);
+      bg.fillRoundedRect(-w / 2, -h / 2, w, h, 14);
+      bg.strokeRoundedRect(-w / 2, -h / 2, w, h, 14);
+      container.add(bg);
+
+      // Light-bulb icon (drawn, so it renders identically on every device)
+      const icon = this.add.graphics();
+      icon.fillStyle(0xffd60a, 1);
+      icon.fillCircle(-52, -5, 9);
+      icon.fillStyle(0xffd60a, 0.9);
+      icon.fillRoundedRect(-56, 3, 8, 7, 2);
+      icon.lineStyle(2, 0xffd60a, 0.75);
+      for (let i = 0; i < 8; i++) {
+        const ang = (i / 8) * Math.PI * 2;
+        icon.beginPath();
+        icon.moveTo(-52 + Math.cos(ang) * 13, -5 + Math.sin(ang) * 13);
+        icon.lineTo(-52 + Math.cos(ang) * 17, -5 + Math.sin(ang) * 17);
+        icon.strokePath();
+      }
+      container.add(icon);
+
+      const label = this.add.text(8, 0, "HINT", {
+        fontFamily: "Consolas, monospace", fontSize: "20px", color: "#7fdbff",
+        fontStyle: "bold"
+      }).setOrigin(0.5);
+      container.add(label);
+
+      container.setSize(w, h).setInteractive({ useHandCursor: true });
+      container.on("pointerdown", () => this.requestHint());
+      container.on("pointerover", () => {
+        if (!this.busy) container.setScale(1.05);
+        label.setColor("#00d4ff");
+      });
+      container.on("pointerout", () => {
+        container.setScale(1);
+        label.setColor("#7fdbff");
+      });
+
+      this.btnHint = container;
+      this.btnHintLabel = label;
+      this.hintReadyAt = 0;
+    }
+
+    requestHint() {
+      if (!this.isLive() || !this.btnHint) return;
+      if (this.busy) {
+        this.txtStatus.setText("WAIT FOR THE REACTION TO SETTLE...");
+        this.time.delayedCall(1200, () => { if (this.txtStatus) this.txtStatus.setText(""); });
+        return;
+      }
+      if (this.time.now < this.hintReadyAt) return;
+
+      const swap = this.board.findHintSwap
+        ? this.board.findHintSwap()
+        : this.board.findAnyValidSwap();
+
+      if (!swap) {
+        this.txtStatus.setText("NO MOVES — RESHUFFLING...");
+        this.handleDeadlock(() => {});
+        return;
+      }
+
+      this.showHint(swap.a, swap.b);
+      if (this.AudioManager) this.AudioManager.playSfx("sfx_button", { volume: 0.5 });
+
+      // Short cooldown so the button can't be spammed mid-cascade.
+      this.hintReadyAt = this.time.now + 6000;
+      this.tweens.add({ targets: this.btnHint, alpha: 0.4, duration: 200 });
+      this.time.delayedCall(6000, () => {
+        if (!this.isLive() || !this.btnHint) return;
+        this.tweens.add({ targets: this.btnHint, alpha: 1, duration: 250 });
+      });
+    }
+
+    showHint(a, b) {
+      this.clearHint();
+      const cell = this.cellSize;
+      const toX = (p) => this.originX + p.c * cell + cell / 2;
+      const toY = (p) => this.originY + p.r * cell + cell / 2;
+
+      const group = this.add.container(0, 0).setDepth(320);
+      this.hintGroup = group;
+
+      const addRing = (p) => {
+        const ring = this.add.container(toX(p), toY(p));
+        const g = this.add.graphics();
+        g.fillStyle(0xffd60a, 0.14);
+        g.fillRoundedRect(-cell / 2 + 4, -cell / 2 + 4, cell - 8, cell - 8, 12);
+        g.lineStyle(4, 0xffd60a, 1);
+        g.strokeRoundedRect(-cell / 2 + 4, -cell / 2 + 4, cell - 8, cell - 8, 12);
+        ring.add(g);
+        group.add(ring);
+        this.tweens.add({
+          targets: ring,
+          scale: { from: 1, to: 1.07 },
+          alpha: { from: 1, to: 0.55 },
+          duration: 520,
+          yoyo: true,
+          repeat: -1,
+          ease: "Sine.easeInOut"
+        });
+      };
+      addRing(a);
+      addRing(b);
+
+      // Arrow between the two highlighted atoms
+      const ax = toX(a), ay = toY(a), bx = toX(b), by = toY(b);
+      const arrow = this.add.container((ax + bx) / 2, (ay + by) / 2)
+        .setRotation(Math.atan2(by - ay, bx - ax));
+      const ag = this.add.graphics();
+      ag.lineStyle(4, 0xffd60a, 0.9);
+      ag.beginPath();
+      ag.moveTo(-18, 0);
+      ag.lineTo(8, 0);
+      ag.strokePath();
+      ag.fillStyle(0xffd60a, 0.9);
+      ag.beginPath();
+      ag.moveTo(18, 0);
+      ag.lineTo(6, -8);
+      ag.lineTo(6, 8);
+      ag.closePath();
+      ag.fillPath();
+      arrow.add(ag);
+      group.add(arrow);
+      this.tweens.add({
+        targets: arrow,
+        alpha: { from: 1, to: 0.35 },
+        duration: 420,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut"
+      });
+
+      this.hintTimer = this.time.delayedCall(4000, () => this.clearHint());
+    }
+
+    clearHint() {
+      if (this.hintTimer) {
+        this.hintTimer.remove(false);
+        this.hintTimer = null;
+      }
+      if (this.hintGroup) {
+        const kids = this.hintGroup.getAll();
+        this.tweens.killTweensOf(kids);
+        this.tweens.killTweensOf(this.hintGroup);
+        this.hintGroup.destroy(true);
+        this.hintGroup = null;
+      }
     }
 
     createGoalsHUD() {
@@ -416,6 +577,7 @@
     // ---- Swap Handling ----
     onValidSwap(a, b, done) {
       try {
+        this.clearHint();
         this.busy = true;
         this.setStep("swap");
         // Safety: force-unlock after 3 s even if animation chain stalls
@@ -488,6 +650,7 @@
 
     onInvalidSwap(a, b) {
       // Invalid swap - no move consumed, board already restored by model
+      this.clearHint();
       this.renderer.syncSprites();
       // Play invalid swap sound
       if (this.AudioManager) this.AudioManager.playSfx("sfx_button", { volume: 0.4 });

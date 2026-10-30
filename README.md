@@ -32,6 +32,7 @@ http://localhost:8080/atom-smasher/?assets=0
 - **Progress** — localStorage save (stars, high scores, settings), star-gated world map, boosters bought with stars
 - **Hint button** — highlights a guaranteed-legal swap (never a stone or empty cell) with a short cooldown
 - **Animated reactor map** — nodes pop in along the route, energy pulses flow along the path, current chamber has a pulsing halo
+- **Booster screen** — pulsating atom core with orbiting electrons and the chamber's objective text
 - **Persistence-safe** — optional external sprite art with automatic procedural fallback
 
 ## Controls

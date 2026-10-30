@@ -24,10 +24,142 @@
 
     create() {
       this.createBackground();
+      this.createAtomCore();
       this.createTitle();
       this.createBoosters();
       this.createBottomBar();
       this.createSettingsButton();
+    }
+
+    // Big pulsating atom filling the empty space under the booster cards.
+    createAtomCore() {
+      const cx = this.scale.width / 2;
+      const cy = this.scale.height * 0.53;
+      const root = this.add.container(cx, cy).setDepth(2);
+      this.atomCore = root;
+
+      // Soft ambient glow
+      const glow = this.add.circle(0, 0, 170, 0x00d4ff, 0.08);
+      root.add(glow);
+
+      // Expanding shockwave rings
+      for (let i = 0; i < 2; i++) {
+        const ring = this.add.circle(0, 0, 70);
+        ring.setStrokeStyle(2, 0x00d4ff, 0.5);
+        root.add(ring);
+        this.tweens.add({
+          targets: ring,
+          scale: { from: 1, to: 2.1 },
+          alpha: { from: 0.5, to: 0 },
+          duration: 2600,
+          delay: i * 1300,
+          repeat: -1,
+          ease: "Sine.easeOut"
+        });
+      }
+
+      // Three elliptical orbits, each with one travelling electron
+      const orbits = [
+        { color: 0x00d4ff, rot: 0, speed: 0.9 },
+        { color: 0xff1a7b, rot: Math.PI / 3, speed: -1.25 },
+        { color: 0x00ff88, rot: -Math.PI / 3, speed: 1.6 }
+      ];
+      const rx = 175, ry = 62;
+
+      this.atomElectrons = [];
+      for (const o of orbits) {
+        const orbit = this.add.container(0, 0).setRotation(o.rot);
+        const path = this.add.graphics();
+        path.lineStyle(2, o.color, 0.35);
+        path.strokeEllipse(0, 0, rx * 2, ry * 2);
+        orbit.add(path);
+
+        const electron = this.add.circle(rx, 0, 7, o.color, 1);
+        electron.setStrokeStyle(2, 0xffffff, 0.6);
+        orbit.add(electron);
+        root.add(orbit);
+
+        this.atomElectrons.push({
+          electron, rx, ry,
+          angle: Math.random() * Math.PI * 2,
+          speed: o.speed
+        });
+      }
+
+      // Nucleus: proton/neutron cluster
+      const nucleus = this.add.container(0, 0);
+      const coreGlow = this.add.circle(0, 0, 54, 0x00d4ff, 0.16);
+      root.add(coreGlow);
+      const parts = [
+        { x: -16, y: -9, r: 18, c: 0xffd60a },
+        { x: 16, y: -9, r: 18, c: 0x00d4ff },
+        { x: 0, y: 16, r: 19, c: 0xff1a7b }
+      ];
+      for (const p of parts) {
+        nucleus.add(this.add.circle(p.x, p.y, p.r + 9, p.c, 0.12));
+        const dot = this.add.circle(p.x, p.y, p.r, p.c, 1);
+        dot.setStrokeStyle(2, 0xffffff, 0.35);
+        nucleus.add(dot);
+      }
+      root.add(nucleus);
+
+      // Pulse: nucleus breathes, whole atom swells, glow throbs
+      this.tweens.add({
+        targets: nucleus,
+        scale: { from: 0.92, to: 1.08 },
+        duration: 900,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut"
+      });
+      this.tweens.add({
+        targets: root,
+        scale: { from: 0.97, to: 1.03 },
+        duration: 1500,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut"
+      });
+      this.tweens.add({
+        targets: glow,
+        alpha: { from: 0.05, to: 0.13 },
+        scale: { from: 0.9, to: 1.12 },
+        duration: 1200,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut"
+      });
+      this.tweens.add({
+        targets: coreGlow,
+        alpha: { from: 0.12, to: 0.26 },
+        scale: { from: 0.85, to: 1.15 },
+        duration: 900,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut"
+      });
+
+      // Level flavour text under the core
+      const level = this.levelData.getLevel(this.levelId);
+      if (level && level.description) {
+        this.add.text(cx, cy + 195, level.description, {
+          fontFamily: "Consolas, monospace",
+          fontSize: "15px",
+          color: "#3f6f8f",
+          align: "center",
+          wordWrap: { width: 420 }
+        }).setOrigin(0.5);
+      }
+    }
+
+    update(time, delta) {
+      if (!this.atomElectrons) return;
+      const dt = Math.min(delta, 50) / 1000;
+      for (const e of this.atomElectrons) {
+        e.angle += e.speed * dt;
+        e.electron.x = Math.cos(e.angle) * e.rx;
+        e.electron.y = Math.sin(e.angle) * e.ry;
+      }
     }
 
     createBackground() {

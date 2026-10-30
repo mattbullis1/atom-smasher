@@ -447,8 +447,10 @@
         for (let r = this.rows - 1; r >= 0; r--) {
           const v = this.grid[r][c];
           const obs = this.obstacles[r][c];
-          // Stone obstacles don't fall and block falling
+          // Stone obstacles don't fall and split the column into segments.
           if (obs === OBSTACLE.STONE) {
+            // Refill the segment that ends just below this stone.
+            this.refillSegment(c, r + 1, write, refills, spawn);
             write = r - 1;
             continue;
           }
@@ -466,19 +468,22 @@
             write--;
           }
         }
-        // Refill empty cells above write pointer
-        for (let r = write; r >= 0; r--) {
-          if (this.obstacles[r][c] === OBSTACLE.STONE) continue;
-          const v = spawn ? spawn[refills.length] : (this.rng() * this.atomTypes) | 0;
-          this.grid[r][c] = v;
-          // New atoms don't have obstacles (unless level places them)
-          if (this.obstacles[r][c] === OBSTACLE.NONE) {
-            this.obstacles[r][c] = OBSTACLE.NONE;
-          }
-          refills.push({ col: c, row: r, type: v });
-        }
+        // Refill the top segment (above the highest stone, or the whole column).
+        this.refillSegment(c, 0, write, refills, spawn);
       }
       return { moves, refills };
+    }
+
+    // Fill every empty cell in one vertical segment [topRow .. write] with a
+    // new atom. Called once per segment so holes below a stone wall are
+    // refilled too — previously only the top segment was replenished.
+    refillSegment(col, topRow, write, refills, spawn) {
+      for (let r = write; r >= topRow; r--) {
+        if (this.obstacles[r][col] === OBSTACLE.STONE) continue;
+        const v = spawn ? spawn[refills.length] : (this.rng() * this.atomTypes) | 0;
+        this.grid[r][col] = v;
+        refills.push({ col, row: r, type: v, fromRow: topRow - 1 });
+      }
     }
 
     // ---- Cascade Resolution ----

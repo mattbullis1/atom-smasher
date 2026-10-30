@@ -384,7 +384,11 @@
       // New sprites spawning from top
       for (const refill of refills) {
         const x = this.originX + refill.col * this.cellSize + this.cellSize / 2;
-        const startY = this.originY - this.cellSize; // Above board
+        // New atoms fall in from the top of their segment (a segment below a
+        // stone wall starts just under the stone, not above the board).
+        const startY = (typeof refill.fromRow === "number" && refill.fromRow >= 0)
+          ? this.originY + refill.fromRow * this.cellSize + this.cellSize / 2
+          : this.originY - this.cellSize;
         const targetY = this.originY + refill.row * this.cellSize + this.cellSize / 2;
 
         const textureKey = `atom_${refill.type}`;

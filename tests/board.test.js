@@ -552,6 +552,38 @@ section("25. Stability sweep (100 boards x 50 swaps)");
   ok(maxWaves < 200, "max cascade waves " + maxWaves + " under 200 cap");
 }
 
+/* 26. Gravity refills segments below stone walls */
+section("26. Gravity refills holes below stone walls");
+{
+  const b = new BoardModel({ seed: 7, types: 6 });
+  b.rows = 8;
+  b.cols = 8;
+  b.grid = Array.from({ length: 8 }, (_, r) =>
+    Array.from({ length: 8 }, (_, c) => ((r + c) % 6) + 1));
+  b.obstacles = Array.from({ length: 8 }, () =>
+    Array(8).fill(ObstacleTypes.OBSTACLE.NONE));
+  // Stone wall at row 3, gap columns 2 and 5 (level 5 "Quarry")
+  for (let c = 0; c < 8; c++) {
+    if (c !== 2 && c !== 5) b.obstacles[3][c] = ObstacleTypes.OBSTACLE.STONE;
+  }
+  // Knock holes in the region BELOW the wall
+  b.grid[5][0] = null;
+  b.grid[6][0] = null;
+  b.grid[7][1] = null;
+
+  const g = b.applyGravity();
+
+  let holes = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      if (b.obstacles[r][c] === ObstacleTypes.OBSTACLE.STONE) continue;
+      if (b.grid[r][c] === null) holes++;
+    }
+  }
+  ok(holes === 0, "no empty cells below a stone wall after gravity");
+  ok(g.refills.some(f => f.row > 3), "refills spawned below the stone wall");
+}
+
 console.log("\n====================================");
 console.log("PASSED: " + passed + "   FAILED: " + failed);
 process.exitCode = failed > 0 ? 1 : 0;

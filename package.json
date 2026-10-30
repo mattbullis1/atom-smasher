@@ -1,7 +1,7 @@
-{
+﻿{
   "name": "atom-smasher",
-  "version": "1.0.1",
-  "description": "Atom Smasher — neon match-3 puzzle game (Phaser 3, procedural + sprite art, 50 levels)",
+  "version": "1.0.2",
+  "description": "Atom Smasher â€” neon match-3 puzzle game (Phaser 3, procedural + sprite art, 50 levels)",
   "main": "js/main.js",
   "scripts": {
     "test": "node tests/board.test.js",
